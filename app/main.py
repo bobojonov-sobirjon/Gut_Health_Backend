@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     _configure_logging()
-    publish_docs = settings.environment != "production"
+    publish_docs = settings.docs_enabled
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,

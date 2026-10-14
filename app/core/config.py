@@ -64,6 +64,7 @@ class Settings(BaseSettings):
 
     admin_email: str = ""
     admin_password: str = ""
+    docs_enabled: bool = True
 
     @field_validator("database_url")
     @classmethod
