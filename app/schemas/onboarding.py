@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.survey import SurveyAnswerGroup, SurveyAnswerInput
+
 
 def _clean_labels(values: list[str]) -> list[str]:
     cleaned: list[str] = []
@@ -30,6 +32,7 @@ class OnboardingWrite(BaseModel):
     concerns: list[str] = Field(default_factory=list, max_length=20)
     interests: list[str] = Field(default_factory=list, max_length=20)
     target_30_day_goal: str | None = Field(default=None, max_length=300)
+    answers: list[SurveyAnswerInput] | None = None
 
     @field_validator("goals", "concerns", "interests")
     @classmethod
@@ -57,5 +60,6 @@ class OnboardingRead(BaseModel):
     concerns: list[str]
     interests: list[str]
     target_30_day_goal: str | None
+    answers: list[SurveyAnswerGroup] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

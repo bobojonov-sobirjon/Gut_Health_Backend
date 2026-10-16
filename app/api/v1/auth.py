@@ -22,6 +22,7 @@ from app.schemas.auth import (
 from app.services.auth_service import (
     IssuedTokens,
     authenticate_user,
+    delete_account,
     login_with_firebase,
     logout,
     refresh_session,
@@ -147,3 +148,11 @@ async def patch_profile(
     """Update the authenticated profile."""
 
     return await update_profile(session, current_user, payload)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_profile(current_user: CurrentUser, session: DbSession) -> Response:
+    """Delete the signed-in account, diary, devices, and uploads metadata."""
+
+    await delete_account(session, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

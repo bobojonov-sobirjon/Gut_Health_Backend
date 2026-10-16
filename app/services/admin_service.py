@@ -30,6 +30,7 @@ from app.schemas.admin import (
     AdminUserUpdate,
 )
 from app.schemas.device import DeviceRead, DeviceUpdate
+from app.services import survey_service
 from app.services.storage_service import to_public_url
 
 
@@ -107,10 +108,12 @@ async def get_user_detail(session: AsyncSession, user_id: uuid.UUID) -> AdminUse
     )
     diary_count = await _count(session, DiaryEntry, DiaryEntry.user_id == user_id)
     profile = AdminUserListItem.model_validate(user).model_dump()
+    survey_answers = await survey_service.answers_for_user(session, user_id)
     return AdminUserDetail(
         **profile,
         devices=[DeviceRead.model_validate(device) for device in devices],
         onboarding=_onboarding_read(onboarding, user.email) if onboarding else None,
+        survey_answers=survey_answers,
         diary_entries=[_diary_summary(entry) for entry in entries],
         uploads=[_upload_read(item) for item in uploads],
         device_count=len(devices),
@@ -230,6 +233,17 @@ async def list_onboarding(
     return [_onboarding_read(row, row.user.email) for row in rows], total
 
 
+async def delete_onboarding(session: AsyncSession, profile_id: uuid.UUID) -> None:
+    row = await session.get(OnboardingProfile, profile_id)
+    if row is None:
+        raise not_found("Onboarding profile not found")
+    user = await session.get(User, row.user_id)
+    if user is not None:
+        user.onboarding_completed = False
+    await session.delete(row)
+    await commit_session(session)
+
+
 async def get_onboarding(session: AsyncSession, profile_id: uuid.UUID) -> AdminOnboardingRead:
     statement = (
         select(OnboardingProfile)
@@ -285,6 +299,14 @@ async def list_diary(
     ], total
 
 
+async def delete_diary(session: AsyncSession, entry_id: uuid.UUID) -> None:
+    entry = await session.get(DiaryEntry, entry_id)
+    if entry is None:
+        raise not_found("Diary entry not found")
+    await session.delete(entry)
+    await commit_session(session)
+
+
 async def get_diary(session: AsyncSession, entry_id: uuid.UUID) -> AdminDiaryDetail:
     statement = (
         select(DiaryEntry)
@@ -321,6 +343,14 @@ async def list_bowel(
     return await _list_day_children(session, BowelMovement, AdminBowelListItem, query, limit, offset)
 
 
+async def delete_bowel(session: AsyncSession, movement_id: uuid.UUID) -> None:
+    row = await session.get(BowelMovement, movement_id)
+    if row is None:
+        raise not_found("Bowel log not found")
+    await session.delete(row)
+    await commit_session(session)
+
+
 async def get_bowel(session: AsyncSession, movement_id: uuid.UUID) -> AdminBowelListItem:
     return await _get_day_child(session, BowelMovement, AdminBowelListItem, movement_id, "Bowel log not found")
 
@@ -341,6 +371,14 @@ async def list_food(
         offset,
         extra_search=FoodDrinkLog.name,
     )
+
+
+async def delete_food(session: AsyncSession, food_id: uuid.UUID) -> None:
+    row = await session.get(FoodDrinkLog, food_id)
+    if row is None:
+        raise not_found("Food or drink log not found")
+    await session.delete(row)
+    await commit_session(session)
 
 
 async def get_food(session: AsyncSession, food_id: uuid.UUID) -> AdminFoodListItem:

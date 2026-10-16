@@ -1,6 +1,6 @@
 # Gut Health Tracker — Stage 1 Mobile API
 
-Documentation for the mobile frontend. Stage 1 is sign-in, onboarding, the daily diary, photos, and push-token registration. History filters, AI reports, settings, reminders, and account deletion are not in this stage.
+Documentation for the mobile frontend. Stage 1 is sign-in, onboarding, the daily diary, photos, and push-token registration. History filters, AI reports, settings, and reminders are not in this stage. Deleting the signed-in account is `DELETE /api/v1/auth/me`.
 
 ## 1. General
 
@@ -321,6 +321,14 @@ Example request:
 Response `200`: shared user object.
 
 Avatar is not set here. Upload with `purpose=avatar`.
+
+### Delete account
+
+- METHOD: `DELETE`
+- URL: `/api/v1/auth/me`
+- Auth: Bearer access token
+
+Response `204` with an empty body. Deletes the signed-in user and the diary, onboarding, devices, refresh tokens, and upload rows that belong to them. Admin accounts are rejected.
 
 ### Password register (optional, not the product path)
 

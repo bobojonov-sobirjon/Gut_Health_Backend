@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Вопросы — Gut Health</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,680&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/index-CEvjHUZg.css" />
+  <style>
+    html, body { background: transparent; scrollbar-width: none; -ms-overflow-style: none; }
+    html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    .editor { width: 100%; }
+    .row-actions { display: flex; gap: .35rem; justify-content: flex-end; }
+    .icon-btn {
+      width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--forest);
+      cursor: pointer; padding: 0;
+    }
+    .icon-btn.danger { color: var(--terra); }
+    .icon-btn svg { display: block; }
+    .tabs { display: flex; gap: .4rem; margin: 0 0 1rem; }
+    .tabs button.active { background: var(--forest); color: #fff; border-color: transparent; }
+    label.field { display: grid; gap: .35rem; font-size: .82rem; font-weight: 650; color: var(--muted); }
+    input, select, textarea { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: .65rem .75rem; background: #fff; width: 100%; }
+    textarea { min-height: 88px; }
+    .stack { display: grid; gap: .8rem; }
+    .split { display: grid; grid-template-columns: 1.4fr .6fr; gap: .8rem; }
+    .check { display: flex; gap: .45rem; align-items: center; font-weight: 600; color: var(--ink); }
+    .form-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 1.1rem 1.15rem 1.2rem; margin-bottom: 1rem; }
+    .head-actions { display: flex; gap: .5rem; align-items: center; }
+    tbody tr { cursor: pointer; }
+    .option-add { display: grid; grid-template-columns: 1fr 7rem auto auto; gap: .5rem; align-items: center; margin-top: .8rem; }
+    .checks { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+    .ts-wrapper { width: 100%; }
+    .ts-wrapper.single .ts-control {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      min-height: 46px;
+      padding: .45rem .75rem;
+      background: #fff;
+      box-shadow: none;
+      font: inherit;
+    }
+    .ts-wrapper.single .ts-control:focus-within { border-color: var(--forest); }
+    .ts-dropdown {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-top: 6px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      z-index: 30;
+    }
+    .ts-dropdown .option { padding: .7rem .85rem; cursor: pointer; }
+    .ts-dropdown .active { background: #e7f2ec; color: var(--ink); }
+    .ts-dropdown .selected { background: var(--forest); color: #fff; }
+    @media (max-width: 800px) {
+      .split, .option-add { grid-template-columns: 1fr; }
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.4.1/dist/css/tom-select.default.min.css" />
+</head>
+<body>
+  <div class="editor">
+    <section id="login" class="login-card" hidden>
+      <p class="eyebrow">Gut Health</p>
+      <h1>Вопросы</h1>
+      <p class="lede">Войдите тем же админ-аккаунтом.</p>
+      <form id="login-form">
+        <label class="field">Email <input name="email" type="email" required value="admin@guthealth.app" /></label>
+        <label class="field">Пароль <input name="password" type="password" required /></label>
+        <p id="login-error" class="form-error" hidden></p>
+        <button class="primary" type="submit">Войти</button>
+      </form>
+    </section>
+    <section id="app" hidden></section>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.4.1/dist/js/tom-select.complete.min.js"></script>
+  <script>
+    const api = "/api/v1/admin";
+    const kinds = { single: "Один вариант", multi: "Несколько", tiles: "Плитки", text: "Текст" };
+    const appView = document.querySelector("#app");
+    const loginView = document.querySelector("#login");
+    let questions = [];
+    let answerRows = [];
+
+    function token() { return localStorage.getItem("admin_token"); }
+    async function call(path, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      if (token()) headers.Authorization = "Bearer " + token();
+      if (options.body) headers["Content-Type"] = "application/json";
+      const response = await fetch(api + path, { ...options, headers });
+      if (response.status === 204) return null;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = data.detail;
+        throw new Error(typeof detail === "string" ? detail : "Запрос не выполнен");
+      }
+      return data;
+    }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[char]));
+    }
+    function pill(on, yes, no) {
+      return `<span class="pill ${on ? "pill-on" : "pill-off"}">${on ? yes : no}</span>`;
+    }
+    function reportHeight() {
+      const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+      parent.postMessage({ type: "survey-height", height: height + 8 }, location.origin);
+    }
+    function showLogin(message) {
+      appView.hidden = true;
+      loginView.hidden = false;
+      const error = document.querySelector("#login-error");
+      error.hidden = !message;
+      error.textContent = message || "";
+      reportHeight();
+    }
+    function parseRoute() {
+      const parts = (location.hash || "#/").replace(/^#/, "").split("/").filter(Boolean);
+      if (parts[0] === "new") return { name: "new" };
+      if (parts[0] === "q" && parts[1]) return { name: "question", id: decodeURIComponent(parts[1]) };
+      if (parts[0] === "answers" && parts[1]) return { name: "answer", id: decodeURIComponent(parts[1]) };
+      if (parts[0] === "answers") return { name: "answers" };
+      return { name: "list" };
+    }
+    function tabs(active) {
+      return `<div class="tabs">
+        <button type="button" class="${active === "list" ? "primary active" : "ghost"}" data-go="#/">Вопросы</button>
+        <button type="button" class="${active === "answers" ? "primary active" : "ghost"}" data-go="#/answers">Ответы пользователей</button>
+      </div>`;
+    }
+    let draftOptions = [];
+    function mountSelects(root) {
+      if (!window.TomSelect) return;
+      root.querySelectorAll("select").forEach((select) => {
+        if (select.tomselect) return;
+        const control = new TomSelect(select, {
+          create: false,
+          allowEmptyOption: false,
+          controlInput: null,
+          maxOptions: null,
+        });
+        control.on("change", () => {
+          const block = document.querySelector("#answers-block");
+          if (block && select.name === "kind") block.hidden = select.value === "text";
+          reportHeight();
+        });
+      });
+    }
+    const pencilIcon = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/></svg>';
+    const trashIcon = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12"/></svg>';
+    function bindNav(root) {
+      root.querySelectorAll("[data-go]").forEach((node) => {
+        node.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          location.hash = node.getAttribute("data-go");
+        });
+      });
+      root.querySelectorAll("[data-delete]").forEach((node) => {
+        node.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!confirm("Удалить эту запись?")) return;
+          const kind = node.getAttribute("data-delete");
+          const id = node.getAttribute("data-id");
+          try {
+            if (kind === "question") await call("/survey/questions/" + id, { method: "DELETE" });
+            else if (kind === "option") await call("/survey/options/" + id, { method: "DELETE" });
+            else await call("/survey/answers/" + id, { method: "DELETE" });
+            if (kind === "question" && location.hash.indexOf("#/q/") === 0) location.hash = "#/";
+            else render();
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+      });
+    }
+    async function render() {
+      if (!token()) { showLogin(); return; }
+      loginView.hidden = true;
+      appView.hidden = false;
+      const route = parseRoute();
+      try {
+        if (route.name === "list" || route.name === "new" || route.name === "question") {
+          questions = await call("/survey/questions");
+        }
+        if (route.name === "answers" || route.name === "answer") {
+          answerRows = await call("/survey/answers?q=");
+        }
+        if (route.name === "list") renderList();
+        else if (route.name === "new") renderEditor(null);
+        else if (route.name === "question") renderEditor(questions.find((item) => item.id === route.id) || null);
+        else if (route.name === "answers") renderAnswers();
+        else renderAnswer(answerRows.find((item) => item.user_id === route.id) || null);
+      } catch (error) {
+        if (/authenticated|авториза/i.test(error.message)) showLogin(error.message);
+        else appView.innerHTML = `<p class="form-error">${escapeHtml(error.message)}</p>`;
+      }
+      reportHeight();
+    }
+    function renderList() {
+      const rows = questions.map((question) => `<tr data-go="#/q/${encodeURIComponent(question.id)}">
+        <td>${escapeHtml(question.title)}</td>
+        <td>${escapeHtml(kinds[question.kind] || question.kind)}</td>
+        <td>${question.sort_order}</td>
+        <td>${question.options.length}</td>
+        <td>${pill(question.is_active, "Да", "Нет")}</td>
+        <td class="row-actions" data-stop="1">
+          <button type="button" class="icon-btn" title="Изменить" data-go="#/q/${encodeURIComponent(question.id)}">${pencilIcon}</button>
+          <button type="button" class="icon-btn danger" title="Удалить" data-delete="question" data-id="${question.id}">${trashIcon}</button>
+        </td>
+      </tr>`).join("");
+      appView.innerHTML = `
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Онбординг</p>
+            <h1>Вопросы</h1>
+          </div>
+          <div class="head-actions">
+            <button type="button" class="primary" data-go="#/new">Добавить</button>
+          </div>
+        </header>
+        ${tabs("list")}
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Текст</th><th>Тип</th><th>Порядок</th><th>Ответы</th><th>Показан</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${rows || `<tr><td colspan="6" class="muted">Пока нет вопросов.</td></tr>`}
+            </tbody>
+          </table>
+        </div>`;
+      bindNav(appView);
+    }
+    function renderEditor(question) {
+      const creating = !question;
+      if (!creating && !question) {
+        appView.innerHTML = `<p class="form-error">Вопрос не найден.</p>`;
+        return;
+      }
+      const options = creating ? "" : question.options.map((option) => `<tr>
+        <td>${escapeHtml(option.emoji || "—")}</td>
+        <td>${escapeHtml(option.label)}</td>
+        <td>${option.sort_order}</td>
+        <td>${pill(option.clears_others, "Да", "Нет")}</td>
+        <td>${pill(option.is_active, "Да", "Нет")}</td>
+        <td class="row-actions">
+          <button type="button" class="icon-btn" title="Изменить" data-edit-option="${option.id}">${pencilIcon}</button>
+          <button type="button" class="icon-btn danger" title="Удалить" data-delete="option" data-id="${option.id}">${trashIcon}</button>
+        </td>
+      </tr>`).join("");
+      appView.innerHTML = `
+        <header class="page-head">
+          <div>
+            <a class="text-link back-link" data-go="#/">Все вопросы</a>
+            <p class="eyebrow">${creating ? "Новый вопрос" : (kinds[question.kind] || "")}</p>
+            <h1>${creating ? "Добавить вопрос" : escapeHtml(question.title)}</h1>
+          </div>
+          ${creating ? "" : `<div class="head-actions">
+            <button type="button" class="ghost" id="toggle">${question.is_active ? "Скрыть" : "Показать"}</button>
+            <button type="button" class="danger" id="remove">Удалить</button>
+          </div>`}
+        </header>
+        <form id="question-form" class="form-card stack">
+          <label class="field">Текст вопроса <input name="title" required maxlength="200" value="${creating ? "" : escapeHtml(question.title)}" /></label>
+          <div class="split">
+            <label class="field">Тип
+              <select name="kind">
+                ${Object.entries(kinds).map(([value, label]) => `<option value="${value}" ${!creating && question.kind === value ? "selected" : ""}>${label}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">Порядок <input name="sort_order" type="number" min="0" value="${creating ? 10 : question.sort_order}" /></label>
+          </div>
+          <label class="field">Подзаголовок <textarea name="subtitle" maxlength="1000">${creating ? "" : escapeHtml(question.subtitle || "")}</textarea></label>
+          <label class="field">Подсказка в поле <input name="placeholder" maxlength="300" value="${creating ? "" : escapeHtml(question.placeholder || "")}" /></label>
+          <div class="checks">
+            <label class="check"><input name="is_required" type="checkbox" ${!creating && question.is_required ? "checked" : ""} /> Обязательный</label>
+            <label class="check"><input name="allow_skip" type="checkbox" ${creating || question.allow_skip ? "checked" : ""} /> Можно пропустить</label>
+          </div>
+          ${creating ? `
+          <section id="answers-block">
+            <h3>Варианты ответа</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Эмодзи</th><th>Текст</th><th>Сбрасывает остальные</th><th></th></tr></thead>
+                <tbody id="draft-rows">${draftOptions.length ? draftOptions.map((option, index) => `<tr>
+                  <td>${escapeHtml(option.emoji || "—")}</td>
+                  <td>${escapeHtml(option.label)}</td>
+                  <td>${pill(option.clears_others, "Да", "Нет")}</td>
+                  <td class="row-actions"><button type="button" class="icon-btn danger" title="Удалить" data-remove-draft="${index}">${trashIcon}</button></td>
+                </tr>`).join("") : `<tr><td colspan="4" class="muted">Ответов пока нет. Добавьте их ниже.</td></tr>`}</tbody>
+              </table>
+            </div>
+            <div class="option-add">
+              <input id="draft-label" placeholder="Текст ответа" maxlength="120" />
+              <input id="draft-emoji" placeholder="Эмодзи" maxlength="16" />
+              <label class="check"><input id="draft-clear" type="checkbox" /> Сбрасывает остальные</label>
+              <button class="ghost" type="button" id="add-draft">Добавить ответ</button>
+            </div>
+          </section>` : ""}
+          <div><button class="primary" type="submit">${creating ? "Добавить" : "Сохранить"}</button></div>
+        </form>
+        ${creating ? "" : `
+          <section class="form-card">
+            <h3>Варианты ответа</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Эмодзи</th><th>Текст</th><th>Порядок</th><th>Сбрасывает остальные</th><th>Показан</th><th></th></tr></thead>
+                <tbody>${options || `<tr><td colspan="6" class="muted">Вариантов пока нет.</td></tr>`}</tbody>
+              </table>
+            </div>
+            <form id="option-form" class="option-add">
+              <input name="label" placeholder="Текст ответа" required maxlength="120" />
+              <input name="emoji" placeholder="Эмодзи" maxlength="16" />
+              <label class="check"><input name="clears_others" type="checkbox" /> Сбрасывает остальные</label>
+              <button class="primary" type="submit">Добавить ответ</button>
+            </form>
+          </section>`}`;
+      bindNav(appView);
+      document.querySelector("#question-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.target);
+        const body = {
+          title: form.get("title"),
+          subtitle: form.get("subtitle") || null,
+          placeholder: form.get("placeholder") || null,
+          kind: form.get("kind"),
+          sort_order: Number(form.get("sort_order") || 0),
+          is_required: form.get("is_required") === "on",
+          allow_skip: form.get("allow_skip") === "on",
+        };
+        if (creating) {
+          body.is_active = true;
+          const created = await call("/survey/questions", { method: "POST", body: JSON.stringify(body) });
+          if (body.kind !== "text") {
+            for (let index = 0; index < draftOptions.length; index += 1) {
+              const option = draftOptions[index];
+              await call("/survey/questions/" + created.id + "/options", {
+                method: "POST",
+                body: JSON.stringify({
+                  label: option.label,
+                  emoji: option.emoji || null,
+                  clears_others: !!option.clears_others,
+                  sort_order: index + 1,
+                  is_active: true,
+                }),
+              });
+            }
+          }
+          draftOptions = [];
+          location.hash = "#/q/" + encodeURIComponent(created.id);
+        } else {
+          await call("/survey/questions/" + question.id, { method: "PATCH", body: JSON.stringify(body) });
+          render();
+        }
+      };
+      if (!creating) {
+        document.querySelector("#toggle").onclick = async () => {
+          await call("/survey/questions/" + question.id, {
+            method: "PATCH",
+            body: JSON.stringify({ is_active: !question.is_active }),
+          });
+          render();
+        };
+        document.querySelector("#remove").onclick = async () => {
+          if (!confirm("Удалить этот вопрос?")) return;
+          await call("/survey/questions/" + question.id, { method: "DELETE" });
+          location.hash = "#/";
+        };
+        const optionForm = document.querySelector("#option-form");
+        appView.querySelectorAll("[data-edit-option]").forEach((button) => {
+          button.onclick = (event) => {
+            event.stopPropagation();
+            const option = question.options.find((item) => item.id === button.getAttribute("data-edit-option"));
+            if (!option) return;
+            optionForm.elements.label.value = option.label;
+            optionForm.elements.emoji.value = option.emoji || "";
+            optionForm.elements.clears_others.checked = option.clears_others;
+            optionForm.dataset.optionId = option.id;
+            optionForm.querySelector("button").textContent = "Сохранить";
+            optionForm.elements.label.focus();
+          };
+        });
+        optionForm.onsubmit = async (event) => {
+          event.preventDefault();
+          const form = new FormData(event.target);
+          const body = {
+            label: form.get("label"),
+            emoji: form.get("emoji") || null,
+            clears_others: form.get("clears_others") === "on",
+          };
+          if (optionForm.dataset.optionId) {
+            await call("/survey/options/" + optionForm.dataset.optionId, { method: "PATCH", body: JSON.stringify(body) });
+          } else {
+            body.sort_order = question.options.length + 1;
+            body.is_active = true;
+            await call("/survey/questions/" + question.id + "/options", { method: "POST", body: JSON.stringify(body) });
+          }
+          render();
+        };
+      } else {
+        const paintDrafts = () => {
+          const rows = document.querySelector("#draft-rows");
+          if (!rows) return;
+          rows.innerHTML = draftOptions.length
+            ? draftOptions.map((option, index) => `<tr>
+                <td>${escapeHtml(option.emoji || "—")}</td>
+                <td>${escapeHtml(option.label)}</td>
+                <td>${pill(option.clears_others, "Да", "Нет")}</td>
+                <td class="row-actions"><button type="button" class="icon-btn danger" title="Удалить" data-remove-draft="${index}">${trashIcon}</button></td>
+              </tr>`).join("")
+            : `<tr><td colspan="4" class="muted">Ответов пока нет. Добавьте их ниже.</td></tr>`;
+          rows.querySelectorAll("[data-remove-draft]").forEach((button) => {
+            button.onclick = () => {
+              draftOptions.splice(Number(button.getAttribute("data-remove-draft")), 1);
+              paintDrafts();
+              reportHeight();
+            };
+          });
+        };
+        document.querySelector("#add-draft").onclick = () => {
+          const label = document.querySelector("#draft-label").value.trim();
+          if (!label) {
+            document.querySelector("#draft-label").focus();
+            return;
+          }
+          draftOptions.push({
+            label,
+            emoji: document.querySelector("#draft-emoji").value.trim(),
+            clears_others: document.querySelector("#draft-clear").checked,
+          });
+          document.querySelector("#draft-label").value = "";
+          document.querySelector("#draft-emoji").value = "";
+          document.querySelector("#draft-clear").checked = false;
+          paintDrafts();
+          document.querySelector("#draft-label").focus();
+          reportHeight();
+        };
+        ["#draft-label", "#draft-emoji"].forEach((selector) => {
+          document.querySelector(selector).addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              document.querySelector("#add-draft").click();
+            }
+          });
+        });
+      }
+      mountSelects(appView);
+      const answersBlock = document.querySelector("#answers-block");
+      const kindSelect = document.querySelector("select[name=kind]");
+      if (answersBlock && kindSelect) answersBlock.hidden = kindSelect.value === "text";
+      reportHeight();
+    }
+    function renderAnswers() {
+      const rows = answerRows.map((row) => {
+        const preview = row.answers.map((item) => item.values.join(", ")).filter(Boolean).join(" · ");
+        return `<tr data-go="#/answers/${encodeURIComponent(row.user_id)}">
+          <td>${escapeHtml(row.full_name || "—")}</td>
+          <td>${escapeHtml(row.user_email)}</td>
+          <td>${escapeHtml(preview || "—")}</td>
+          <td class="row-actions">
+            <button type="button" class="icon-btn" title="Открыть" data-go="#/answers/${encodeURIComponent(row.user_id)}">${pencilIcon}</button>
+            <button type="button" class="icon-btn danger" title="Удалить" data-delete="answers" data-id="${row.user_id}">${trashIcon}</button>
+          </td>
+        </tr>`;
+      }).join("");
+      appView.innerHTML = `
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Онбординг</p>
+            <h1>Ответы</h1>
+          </div>
+        </header>
+        ${tabs("answers")}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Имя</th><th>Email</th><th>Ответы</th><th></th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="4" class="muted">Пока нет ответов.</td></tr>`}</tbody>
+          </table>
+        </div>`;
+      bindNav(appView);
+    }
+    function renderAnswer(row) {
+      if (!row) {
+        appView.innerHTML = `<a class="text-link" data-go="#/answers">Все ответы</a><p class="form-error">Ответы не найдены.</p>`;
+        bindNav(appView);
+        return;
+      }
+      const lines = row.answers.map((item) => `<tr>
+        <td>${escapeHtml(item.question_title)}</td>
+        <td>${escapeHtml(kinds[item.question_kind] || item.question_kind)}</td>
+        <td>${escapeHtml(item.values.join(", "))}</td>
+      </tr>`).join("");
+      appView.innerHTML = `
+        <header class="page-head">
+          <div>
+            <a class="text-link back-link" data-go="#/answers">Все ответы</a>
+            <p class="eyebrow">Пользователь</p>
+            <h1>${escapeHtml(row.full_name || row.user_email)}</h1>
+          </div>
+        </header>
+        <p class="lede">${escapeHtml(row.user_email)}</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Вопрос</th><th>Тип</th><th>Ответ</th></tr></thead>
+            <tbody>${lines || `<tr><td colspan="3" class="muted">Ответов нет.</td></tr>`}</tbody>
+          </table>
+        </div>`;
+      bindNav(appView);
+    }
+    document.querySelector("#login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      try {
+        const data = await call("/login", {
+          method: "POST",
+          body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
+        });
+        localStorage.setItem("admin_token", data.access_token);
+        if (data.admin) localStorage.setItem("admin_profile", JSON.stringify(data.admin));
+        render();
+      } catch (error) {
+        showLogin(error.message);
+      }
+    });
+    window.addEventListener("hashchange", render);
+    new ResizeObserver(reportHeight).observe(document.body);
+    render();
+  </script>
+</body>
+</html>

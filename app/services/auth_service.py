@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import commit_session, utcnow
-from app.core.exceptions import AppError, conflict, unauthorized
+from app.core.exceptions import AppError, conflict, forbidden, unauthorized
 from app.core.firebase import FirebaseIdentity, provider_from_firebase, verify_firebase_id_token
 from app.core.security import (
     create_access_token,
@@ -177,24 +177,33 @@ async def login_with_firebase(
     return user, tokens
 
 
+# Temporary sign-in code until the client provides SMTP. Six digits, all ones.
+_TEST_EMAIL_CODE = "111111"
+
+
 async def send_email_login_code(session: AsyncSession, email: str) -> str | None:
-    """Store a 6-digit code. Returns the code only when DEBUG is enabled."""
+    """Store a 6-digit code.
+
+    Until SMTP is configured, the code is always ``111111`` and it is returned
+    to the app so the flow can be tested. A real mailbox uses a random code
+    and only returns it when DEBUG is on.
+    """
 
     settings = get_settings()
-    if not settings.debug and not settings.smtp_enabled:
-        raise AppError(
-            503,
-            "Email delivery is not configured. Set SMTP_HOST and SMTP_FROM.",
-            "email_not_configured",
-        )
+    use_test_code = not settings.smtp_enabled
 
-    latest = await _latest_code(session, email)
-    if latest is not None and latest.consumed_at is None:
-        cooldown_end = latest.created_at + timedelta(seconds=60)
-        if cooldown_end > utcnow():
-            raise AppError(429, "Wait a minute before requesting another code", "too_many_requests")
+    if not use_test_code:
+        latest = await _latest_code(session, email)
+        if latest is not None and latest.consumed_at is None:
+            cooldown_end = latest.created_at + timedelta(seconds=60)
+            if cooldown_end > utcnow():
+                raise AppError(
+                    429,
+                    "Wait a minute before requesting another code",
+                    "too_many_requests",
+                )
 
-    code = f"{secrets.randbelow(1_000_000):06d}"
+    code = _TEST_EMAIL_CODE if use_test_code else f"{secrets.randbelow(1_000_000):06d}"
     session.add(
         EmailLoginCode(
             email=email,
@@ -209,7 +218,7 @@ async def send_email_login_code(session: AsyncSession, email: str) -> str | None
         except Exception as exc:
             logger.exception("Sign-in email failed")
             raise AppError(502, "The sign-in email could not be sent", "email_failed") from exc
-    if settings.debug:
+    if settings.debug or use_test_code:
         return code
     return None
 
@@ -219,6 +228,11 @@ async def verify_email_login_code(
     email: str,
     code: str,
 ) -> tuple[User, IssuedTokens]:
+    settings = get_settings()
+    # Until SMTP exists, 111111 signs in even if the send step did not store a row.
+    if not settings.smtp_enabled and hmac.compare_digest(code, _TEST_EMAIL_CODE):
+        return await _issue_email_session(session, email)
+
     row = await _active_code(session, email)
     if row is None:
         raise unauthorized("Invalid or expired code")
@@ -230,6 +244,13 @@ async def verify_email_login_code(
         raise unauthorized("Invalid or expired code")
 
     row.consumed_at = utcnow()
+    return await _issue_email_session(session, email)
+
+
+async def _issue_email_session(
+    session: AsyncSession,
+    email: str,
+) -> tuple[User, IssuedTokens]:
     user = await _get_user_by_email(session, email)
     if user is None:
         user = User(email=email, hashed_password=None, auth_provider=AuthProvider.EMAIL)
@@ -251,6 +272,16 @@ async def update_profile(
         setattr(user, key, value)
     await commit_session(session)
     return user
+
+
+async def delete_account(session: AsyncSession, user: User) -> None:
+    """Delete the signed-in account and rows that belong to it."""
+
+    if user.is_admin:
+        raise forbidden("Admin accounts cannot be deleted from the mobile app")
+    await session.execute(delete(EmailLoginCode).where(EmailLoginCode.email == user.email))
+    await session.delete(user)
+    await commit_session(session)
 
 
 async def _issue_tokens(session: AsyncSession, user: User) -> IssuedTokens:

@@ -26,7 +26,15 @@ from app.schemas.admin import (
     AdminUserUpdate,
 )
 from app.schemas.device import DeviceUpdate
-from app.services import admin_service
+from app.schemas.survey import (
+    SurveyOptionUpdate,
+    SurveyOptionWrite,
+    SurveyQuestionRead,
+    SurveyQuestionUpdate,
+    SurveyQuestionWrite,
+    UserSurveyRead,
+)
+from app.services import admin_service, survey_service
 from app.services.auth_service import login_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -149,6 +157,16 @@ async def admin_onboarding(
     return AdminOnboardingPage(items=items, total=total, limit=limit, offset=offset)
 
 
+@router.delete("/onboarding/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_onboarding_delete(
+    profile_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await admin_service.delete_onboarding(session, profile_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/onboarding/{profile_id}", response_model=AdminOnboardingRead)
 async def admin_onboarding_detail(
     profile_id: UUID,
@@ -168,6 +186,16 @@ async def admin_diary(
 ) -> AdminDiaryPage:
     items, total = await admin_service.list_diary(session, query=q, limit=limit, offset=offset)
     return AdminDiaryPage(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.delete("/diary/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_diary_delete(
+    entry_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await admin_service.delete_diary(session, entry_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/diary/{entry_id}", response_model=AdminDiaryDetail)
@@ -191,6 +219,16 @@ async def admin_bowel(
     return AdminBowelPage(items=items, total=total, limit=limit, offset=offset)
 
 
+@router.delete("/bowel/{movement_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_bowel_delete(
+    movement_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await admin_service.delete_bowel(session, movement_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/bowel/{movement_id}", response_model=AdminBowelListItem)
 async def admin_bowel_detail(
     movement_id: UUID,
@@ -212,6 +250,16 @@ async def admin_food(
     return AdminFoodPage(items=items, total=total, limit=limit, offset=offset)
 
 
+@router.delete("/food/{food_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_food_delete(
+    food_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await admin_service.delete_food(session, food_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/food/{food_id}", response_model=AdminFoodListItem)
 async def admin_food_detail(
     food_id: UUID,
@@ -219,3 +267,98 @@ async def admin_food_detail(
     session: DbSession,
 ) -> AdminFoodListItem:
     return await admin_service.get_food(session, food_id)
+
+
+@router.get("/survey/questions", response_model=list[SurveyQuestionRead])
+async def admin_survey_questions(
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> list[SurveyQuestionRead]:
+    questions = await survey_service.list_questions(session, active_only=False)
+    return [SurveyQuestionRead.model_validate(question) for question in questions]
+
+
+@router.post("/survey/questions", response_model=SurveyQuestionRead, status_code=status.HTTP_201_CREATED)
+async def admin_create_survey_question(
+    payload: SurveyQuestionWrite,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> SurveyQuestionRead:
+    question = await survey_service.create_question(session, payload)
+    return SurveyQuestionRead.model_validate(question)
+
+
+@router.patch("/survey/questions/{question_id}", response_model=SurveyQuestionRead)
+async def admin_update_survey_question(
+    question_id: UUID,
+    payload: SurveyQuestionUpdate,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> SurveyQuestionRead:
+    question = await survey_service.update_question(session, question_id, payload)
+    return SurveyQuestionRead.model_validate(question)
+
+
+@router.delete("/survey/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_survey_question(
+    question_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await survey_service.delete_question(session, question_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/survey/questions/{question_id}/options",
+    response_model=SurveyQuestionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def admin_create_survey_option(
+    question_id: UUID,
+    payload: SurveyOptionWrite,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> SurveyQuestionRead:
+    question = await survey_service.create_option(session, question_id, payload)
+    return SurveyQuestionRead.model_validate(question)
+
+
+@router.patch("/survey/options/{option_id}", response_model=SurveyQuestionRead)
+async def admin_update_survey_option(
+    option_id: UUID,
+    payload: SurveyOptionUpdate,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> SurveyQuestionRead:
+    question = await survey_service.update_option(session, option_id, payload)
+    return SurveyQuestionRead.model_validate(question)
+
+
+@router.delete("/survey/options/{option_id}", response_model=SurveyQuestionRead)
+async def admin_delete_survey_option(
+    option_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> SurveyQuestionRead:
+    question = await survey_service.delete_option(session, option_id)
+    return SurveyQuestionRead.model_validate(question)
+
+
+@router.delete("/survey/answers/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_survey_answers(
+    user_id: UUID,
+    current_admin: CurrentAdmin,
+    session: DbSession,
+) -> Response:
+    await survey_service.delete_user_answers(session, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/survey/answers", response_model=list[UserSurveyRead])
+async def admin_survey_answers(
+    current_admin: CurrentAdmin,
+    session: DbSession,
+    q: str | None = Query(default=None),
+) -> list[UserSurveyRead]:
+    return await survey_service.list_user_surveys(session, q)

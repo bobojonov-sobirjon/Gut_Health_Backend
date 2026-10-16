@@ -154,6 +154,7 @@ Each day can include:
 | POST | `/api/v1/auth/logout` | Revoke a refresh token |
 | GET | `/api/v1/auth/me` | Current profile |
 | PATCH | `/api/v1/auth/me` | Update name |
+| DELETE | `/api/v1/auth/me` | Delete the signed-in account |
 | GET | `/api/v1/onboarding` | Read onboarding |
 | PUT | `/api/v1/onboarding` | Save or replace onboarding |
 | POST | `/api/v1/uploads` | Upload an avatar or log image |

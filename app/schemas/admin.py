@@ -11,6 +11,7 @@ from app.models.diary import FoodDrinkKind
 from app.models.user import AuthProvider, UploadPurpose
 from app.schemas.auth import normalize_email
 from app.schemas.device import DeviceRead
+from app.schemas.survey import SurveyAnswerGroup
 from app.services.storage_service import to_public_url
 
 
@@ -238,6 +239,7 @@ class AdminDiarySummary(BaseModel):
 class AdminUserDetail(AdminUserListItem):
     devices: list[DeviceRead]
     onboarding: AdminOnboardingRead | None
+    survey_answers: list[SurveyAnswerGroup] = Field(default_factory=list)
     diary_entries: list[AdminDiarySummary]
     uploads: list[AdminUploadRead]
     device_count: int
