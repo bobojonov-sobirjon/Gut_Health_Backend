@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gut Health Admin</title>
+    <link rel="icon" type="image/png" href="/logo_gut_health.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,680&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <script type="module" crossorigin src="/assets/index-pfj4qf-n.js?v=questions5"></script>
+    <script type="module" crossorigin src="/assets/index-pfj4qf-n.js?v=questions6"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-CEvjHUZg.css">
     <style>
       html, body, #root {
@@ -52,6 +53,23 @@
       }
       .icon-btn.danger, a.icon-btn.danger { color: var(--terra); }
       .icon-btn svg { display: block; }
+      .brand-mark {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        background: #fffdf8 url("/logo_gut_health.png") center / cover no-repeat;
+        color: transparent;
+        font-size: 0;
+        overflow: hidden;
+      }
+      .login-card::before {
+        content: "";
+        display: block;
+        width: 112px;
+        height: 112px;
+        margin: 0 auto 12px;
+        background: url("/logo_gut_health.png") center / contain no-repeat;
+      }
       iframe.survey-frame {
         width: 100%;
         height: 640px;

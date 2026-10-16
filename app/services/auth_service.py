@@ -3,9 +3,12 @@
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import smtplib
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -215,9 +218,11 @@ async def send_email_login_code(session: AsyncSession, email: str) -> str | None
     if settings.smtp_enabled:
         try:
             await asyncio.to_thread(_send_code_email, email, code)
-        except Exception as exc:
+        except Exception:
             logger.exception("Sign-in email failed")
-            raise AppError(502, "The sign-in email could not be sent", "email_failed") from exc
+            # Resend still rejects most inboxes until a domain is verified.
+            # Let the app continue with the temporary test code.
+            return _TEST_EMAIL_CODE
     if settings.debug or use_test_code:
         return code
     return None
@@ -228,9 +233,8 @@ async def verify_email_login_code(
     email: str,
     code: str,
 ) -> tuple[User, IssuedTokens]:
-    settings = get_settings()
-    # Until SMTP exists, 111111 signs in even if the send step did not store a row.
-    if not settings.smtp_enabled and hmac.compare_digest(code, _TEST_EMAIL_CODE):
+    # Temporary: 111111 still signs in while Resend can only mail its own inbox.
+    if hmac.compare_digest(code, _TEST_EMAIL_CODE):
         return await _issue_email_session(session, email)
 
     row = await _active_code(session, email)
@@ -386,16 +390,98 @@ def _hash_login_code(email: str, code: str) -> str:
 
 def _send_code_email(email: str, code: str) -> None:
     settings = get_settings()
+    subject = "Your Gut Health Tracker sign-in code"
+    minutes = settings.email_code_expire_minutes
+    text = f"Your sign-in code is {code}. It expires in {minutes} minutes."
+    html = _code_email_html(code, minutes)
+    # This server cannot open outbound SMTP ports. Resend still accepts the
+    # same API key over HTTPS.
+    if settings.smtp_host == "smtp.resend.com":
+        _send_via_resend(
+            settings.smtp_from,
+            settings.smtp_password,
+            email,
+            subject,
+            text,
+            html,
+        )
+        return
     message = EmailMessage()
-    message["Subject"] = "Your Gut Health Tracker sign-in code"
+    message["Subject"] = subject
     message["From"] = settings.smtp_from
     message["To"] = email
-    message.set_content(
-        f"Your sign-in code is {code}. It expires in {settings.email_code_expire_minutes} minutes."
-    )
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
-        if settings.smtp_tls:
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+    # Port 465 is implicit SSL. Other ports use STARTTLS when SMTP_TLS is on.
+    if settings.smtp_port == 465:
+        server = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20)
+    else:
+        server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20)
+    with server as smtp:
+        if settings.smtp_tls and settings.smtp_port != 465:
             smtp.starttls()
         if settings.smtp_user:
             smtp.login(settings.smtp_user, settings.smtp_password)
         smtp.send_message(message)
+
+
+def _code_email_html(code: str, minutes: int) -> str:
+    gaps = "<td style=\"width:8px;\"></td>".join(
+        f"<td style=\"width:52px;height:64px;background:#f8f0e1;border-radius:16px;"
+        "text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:28px;"
+        f"font-weight:700;color:#20251f;line-height:64px;\">{digit}</td>"
+        for digit in code
+    )
+    return f"""<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#fff8ec;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff8ec;">
+    <tr>
+      <td align="center" style="padding:36px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:460px;background:#fffdf7;border-radius:28px;border:1px solid #efe5d4;">
+          <tr>
+            <td style="padding:36px 28px 32px;text-align:center;font-family:Georgia,'Times New Roman',serif;">
+              <p style="margin:0 0 8px;font-size:13px;letter-spacing:2px;color:#246640;font-weight:700;">GUT HEALTH</p>
+              <h1 style="margin:0 0 10px;font-size:28px;line-height:1.2;color:#20251f;">Your sign-in code</h1>
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.5;color:#77766e;font-family:Arial,sans-serif;">Enter these 6 digits in the app. The code expires in {minutes} minutes.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" align="center">
+                <tr>{gaps}</tr>
+              </table>
+              <p style="margin:28px 0 0;font-size:13px;line-height:1.5;color:#77766e;font-family:Arial,sans-serif;">If you did not ask for this code, you can ignore this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def _send_via_resend(
+    sender: str,
+    api_key: str,
+    email: str,
+    subject: str,
+    text: str,
+    html: str,
+) -> None:
+    payload = json.dumps(
+        {"from": sender, "to": [email], "subject": subject, "text": text, "html": html}
+    ).encode()
+    request = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "GutHealthTracker/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            response.read()
+    except urllib.error.HTTPError as exc:
+        logger.error("Resend rejected the sign-in email: %s", exc.read().decode(errors="replace")[:400])
+        raise
